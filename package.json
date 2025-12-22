@@ -1,0 +1,12 @@
+{
+  "name": "dm-assistant",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "echo \"TODO: dev script\"",
+    "build": "echo \"TODO: build script\""
+  }
+}
