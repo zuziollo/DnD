@@ -1,12 +1,17 @@
 {
-  "name": "dm-assistant",
+  "name": "dnd-assistant",
   "private": true,
   "workspaces": [
-    "apps/*",
-    "packages/*"
+    "apps/main",
+    "apps/renderer",
+    "packages/shared"
   ],
   "scripts": {
-    "dev": "echo \"TODO: dev script\"",
-    "build": "echo \"TODO: build script\""
+    "dev": "concurrently -k \"echo [root] starting renderer && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 npm run dev --workspace apps/renderer\" \"echo [root] starting main && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 npm run dev --workspace apps/main\"",
+    "build": "npm run build --workspace apps/renderer && npm run build --workspace apps/main"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3"
   }
 }
