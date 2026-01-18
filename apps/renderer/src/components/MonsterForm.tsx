@@ -3,8 +3,10 @@ import type { FormEvent } from "react";
 import type {
   Monster,
   MonsterAction,
+  MonsterLegendaryAttack,
   MonsterMovement,
-  MonsterTrait
+  MonsterTrait,
+  MonsterWeakness
 } from "../types/monster";
 
 type MonsterFormProps = {
@@ -43,13 +45,23 @@ const emptyMonster = (): Monster => ({
   cr: 1,
   hpMax: 0,
   ac: 10,
-  speed: 30,
+  speed: "30 ft",
+  str: 10,
+  dex: 10,
+  con: 10,
+  int: 10,
+  wis: 10,
+  cha: 10,
   size: "Medium",
   alignment: "Neutral",
   movement: emptyMovement(),
   traits: [],
   actions: [],
-  weaknesses: "",
+  weaknesses: [],
+  legendary: false,
+  legendaryDescription: "",
+  legendaryAttacks: [],
+  languages: [],
   notes: ""
 });
 
@@ -62,15 +74,29 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
   const [customAlignment, setCustomAlignment] = useState(
     isCustomAlignment ? form.alignment : ""
   );
+  type MonsterAbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha";
+  const abilityFields: { key: MonsterAbilityKey; label: string }[] = [
+    { key: "str", label: "Siła (STR)" },
+    { key: "dex", label: "Zręczność (DEX)" },
+    { key: "con", label: "Kondycja (CON)" },
+    { key: "int", label: "Inteligencja (INT)" },
+    { key: "wis", label: "Mądrość (WIS)" },
+    { key: "cha", label: "Charyzma (CHA)" }
+  ];
+  const clampAbility = (value: number) => Math.min(30, Math.max(1, value));
 
   const updateField = (
     key: keyof Monster,
     value:
       | string
       | number
+      | boolean
+      | string[]
       | MonsterAction[]
+      | MonsterLegendaryAttack[]
       | MonsterTrait[]
       | MonsterMovement
+      | MonsterWeakness[]
   ) => {
     setForm((prev) => ({ ...prev, [key]: value }));
   };
@@ -99,6 +125,29 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
     );
   };
 
+  const addLegendaryAttack = () => {
+    const next: MonsterLegendaryAttack = {
+      id: `legendary-attack-${Date.now()}`,
+      name: "",
+      description: ""
+    };
+    updateField("legendaryAttacks", [...(form.legendaryAttacks ?? []), next]);
+  };
+
+  const updateLegendaryAttack = (id: string, patch: Partial<MonsterLegendaryAttack>) => {
+    updateField(
+      "legendaryAttacks",
+      (form.legendaryAttacks ?? []).map((a) => (a.id === id ? { ...a, ...patch } : a))
+    );
+  };
+
+  const removeLegendaryAttack = (id: string) => {
+    updateField(
+      "legendaryAttacks",
+      (form.legendaryAttacks ?? []).filter((a) => a.id !== id)
+    );
+  };
+
   const removeTrait = (id: string) => {
     updateField(
       "traits",
@@ -113,16 +162,49 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
     );
   };
 
+  const addWeakness = () => {
+    const next: MonsterWeakness = {
+      id: Date.now().toString(),
+      name: "",
+      note: ""
+    };
+    updateField("weaknesses", [...(form.weaknesses ?? []), next]);
+  };
+
+  const updateWeakness = (id: string, patch: Partial<MonsterWeakness>) => {
+    updateField(
+      "weaknesses",
+      (form.weaknesses ?? []).map((w) => (w.id === id ? { ...w, ...patch } : w))
+    );
+  };
+
+  const removeWeakness = (id: string) => {
+    updateField(
+      "weaknesses",
+      (form.weaknesses ?? []).filter((w) => w.id !== id)
+    );
+  };
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     onSave({
       ...form,
+      str: clampAbility(form.str ?? 10),
+      dex: clampAbility(form.dex ?? 10),
+      con: clampAbility(form.con ?? 10),
+      int: clampAbility(form.int ?? 10),
+      wis: clampAbility(form.wis ?? 10),
+      cha: clampAbility(form.cha ?? 10),
       size: form.size ?? "Medium",
       alignment: (form.alignment ?? "Neutral").trim() || "Neutral",
       movement: form.movement ?? emptyMovement(),
       traits: form.traits ?? [],
       actions: form.actions ?? [],
-      weaknesses: form.weaknesses ?? "",
+      weaknesses: form.weaknesses ?? [],
+      legendary: form.legendary ?? false,
+      legendaryDescription: form.legendaryDescription ?? "",
+      legendaryAttacks: form.legendaryAttacks ?? [],
+      languages: form.languages ?? [],
       notes: form.notes ?? ""
     });
   };
@@ -178,11 +260,36 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
         <label className="label">Szybkość</label>
         <input
           className="input"
-          type="number"
           value={form.speed}
-          onChange={(e) => updateField("speed", Number(e.target.value))}
-          min={0}
+          onChange={(e) => updateField("speed", e.target.value)}
         />
+      </div>
+      <div className="field">
+        <label className="label">Języki (oddzielone przecinkami)</label>
+        <input
+          className="input"
+          value={form.languages?.join(", ") ?? ""}
+          onChange={(e) =>
+            updateField(
+              "languages",
+              e.target.value
+                .split(",")
+                .map((lang) => lang.trim())
+                .filter(Boolean)
+            )
+          }
+        />
+      </div>
+
+      <div className="field">
+        <label className="checkbox">
+          <input
+            type="checkbox"
+            checked={form.legendary ?? false}
+            onChange={() => updateField("legendary", !(form.legendary ?? false))}
+          />
+          Legendarny
+        </label>
       </div>
 
       <div className="field">
@@ -235,6 +342,25 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
       </div>
 
       <div className="field">
+        <label className="label">Atrybuty</label>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {abilityFields.map(({ key, label }) => (
+            <div key={String(key)} className="field">
+              <label className="label">{label}</label>
+              <input
+                className="input"
+                type="number"
+                min={1}
+                max={30}
+                value={form[key] ?? 10}
+                onChange={(e) => updateField(key, clampAbility(Number(e.target.value) || 1))}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="field">
         <label className="label">Ruch</label>
         <div className="pill-row">
           <label className="checkbox">
@@ -272,11 +398,36 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
 
       <div className="field">
         <label className="label">Słabości</label>
-        <textarea
-          className="input"
-          value={form.weaknesses ?? ""}
-          onChange={(e) => updateField("weaknesses", e.target.value)}
-        />
+        <div className="list-rows">
+          {(form.weaknesses ?? []).map((weakness) => (
+            <div key={weakness.id} className="list-row">
+              <label className="label">Nazwa słabości</label>
+              <input
+                className="input"
+                value={weakness.name}
+                onChange={(e) => updateWeakness(weakness.id, { name: e.target.value })}
+              />
+              <label className="label">Opis</label>
+              <input
+                className="input"
+                value={weakness.note ?? ""}
+                onChange={(e) => updateWeakness(weakness.id, { note: e.target.value })}
+              />
+              <div className="row-actions">
+                <button
+                  type="button"
+                  className="btn btn--ghost"
+                  onClick={() => removeWeakness(weakness.id)}
+                >
+                  Usuń
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+        <button type="button" className="btn" onClick={addWeakness}>
+          + Dodaj słabość
+        </button>
       </div>
 
       <div className="field">
@@ -343,6 +494,54 @@ export function MonsterForm({ monster, onSave, onCancel }: MonsterFormProps) {
       <button type="button" className="btn" onClick={addAction}>
         + Dodaj akcję
       </button>
+
+      {form.legendary ? (
+        <details className="panel" style={{ marginTop: 12 }}>
+          <summary className="sectionTitle">Opcje legendarne</summary>
+          <div className="field">
+            <label className="label">Opis legendarny</label>
+            <textarea
+              className="input"
+              value={form.legendaryDescription ?? ""}
+              onChange={(e) => updateField("legendaryDescription", e.target.value)}
+            />
+          </div>
+
+          <h3 className="sectionTitle">Ataki legendarne</h3>
+          <div className="list-rows">
+            {(form.legendaryAttacks ?? []).map((attack) => (
+              <div key={attack.id} className="list-row">
+                <label className="label">Nazwa</label>
+                <input
+                  className="input"
+                  value={attack.name}
+                  onChange={(e) => updateLegendaryAttack(attack.id, { name: e.target.value })}
+                />
+                <label className="label">Opis</label>
+                <textarea
+                  className="input"
+                  value={attack.description ?? ""}
+                  onChange={(e) =>
+                    updateLegendaryAttack(attack.id, { description: e.target.value })
+                  }
+                />
+                <div className="row-actions">
+                  <button
+                    type="button"
+                    className="btn btn--ghost"
+                    onClick={() => removeLegendaryAttack(attack.id)}
+                  >
+                    Usuń
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+          <button type="button" className="btn" onClick={addLegendaryAttack}>
+            + Dodaj atak legendarny
+          </button>
+        </details>
+      ) : null}
 
       <div className="form-actions">
         <button type="button" className="btn btn--ghost" onClick={onCancel}>

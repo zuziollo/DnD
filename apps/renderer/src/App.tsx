@@ -86,12 +86,17 @@ const defaultCombatLog: CombatLogEntry[] = [
   { id: "clog-1", timestamp: new Date().toISOString(), message: "Walka gotowa." }
 ];
 
-function normalizeCombatLogEntries(entries?: any[]): CombatLogEntry[] {
+type CombatLogEntryInput = Partial<CombatLogEntry> & { text?: string };
+
+function normalizeCombatLogEntries(entries?: CombatLogEntryInput[]): CombatLogEntry[] {
   const source = Array.isArray(entries) && entries.length ? entries : defaultCombatLog;
   return source.map((entry, idx) => ({
     id: entry.id ?? `clog-${Date.now()}-${idx}`,
     timestamp: entry.timestamp ?? new Date().toISOString(),
-    message: entry.message ?? entry.text ?? ""
+    message: entry.message ?? entry.text ?? "",
+    actorId: entry.actorId,
+    targetId: entry.targetId,
+    round: entry.round
   }));
 }
 
@@ -683,11 +688,17 @@ export function App() {
     }
   };
 
-  const appendCombatLog = (message: string) => {
+  const appendCombatLog = (
+    message: string,
+    meta?: { actorId?: string; targetId?: string; round?: number }
+  ) => {
     const entry: CombatLogEntry = {
       id: `clog-${Date.now()}`,
       timestamp: new Date().toISOString(),
-      message
+      message,
+      actorId: meta?.actorId,
+      targetId: meta?.targetId,
+      round: meta?.round
     };
     setCombatLog((prev) => [...prev, entry]);
   };
@@ -715,7 +726,10 @@ export function App() {
     conditions: pc.conditions ?? [],
     spells: pc.spells ?? [],
     inventory: pc.inventory ?? [],
-    features: pc.features ?? []
+    features: pc.features ?? [],
+    legendary: pc.legendary ?? false,
+    legendaryDescription: pc.legendaryDescription ?? "",
+    legendaryAttacks: pc.legendaryAttacks ?? []
   });
 
   const normalizeNPC = (npc: NPC, fallbackCampaignId?: string): NPC => ({
@@ -751,14 +765,48 @@ export function App() {
     });
   };
 
-  const normalizeMonster = (monster: Monster): Monster => ({
+  type LegacyMonster = Monster & {
+    weaknesses?: Monster["weaknesses"] | string;
+    speed?: Monster["speed"] | number;
+    languages?: Monster["languages"] | string;
+    legendary?: Monster["legendary"];
+    legendaryDescription?: Monster["legendaryDescription"];
+    legendaryAttacks?: Monster["legendaryAttacks"];
+  };
+
+  const normalizeMonster = (monster: LegacyMonster): Monster => ({
     ...monster,
+    str: monster.str ?? 10,
+    dex: monster.dex ?? 10,
+    con: monster.con ?? 10,
+    int: monster.int ?? 10,
+    wis: monster.wis ?? 10,
+    cha: monster.cha ?? 10,
+    speed:
+      typeof monster.speed === "number"
+        ? `${monster.speed} ft`
+        : monster.speed ?? "30 ft",
     size: monster.size ?? "Medium",
     alignment: monster.alignment ?? "Neutral",
     movement: monster.movement ?? { walk: true, fly: false, swim: false },
     traits: monster.traits ?? [],
     actions: monster.actions ?? [],
-    weaknesses: monster.weaknesses ?? "",
+    weaknesses:
+      typeof monster.weaknesses === "string"
+        ? monster.weaknesses.trim()
+          ? [{ id: "legacy", name: monster.weaknesses.trim(), note: "" }]
+          : []
+        : monster.weaknesses ?? [],
+    legendary: monster.legendary ?? false,
+    legendaryDescription: monster.legendaryDescription ?? "",
+    legendaryAttacks: monster.legendaryAttacks ?? [],
+    languages:
+      typeof monster.languages === "string"
+        ? monster.languages
+            .split(",")
+            .map((lang) => lang.trim())
+            .filter(Boolean)
+        : monster.languages ?? [],
     notes: monster.notes ?? ""
   });
 
@@ -813,7 +861,12 @@ export function App() {
       ensureActiveCombatant(merged);
       return merged;
     });
-    additions.forEach((c) => appendCombatLog(`${c.name} (PC) dołącza do walki`));
+    additions.forEach((c) =>
+      appendCombatLog(`${c.name} (PC) dołącza do walki`, {
+        actorId: c.id,
+        round: combatRound
+      })
+    );
   };
 
   const handleAddNPCCombatants = (ids: string[]) => {
@@ -830,7 +883,12 @@ export function App() {
       ensureActiveCombatant(merged);
       return merged;
     });
-    additions.forEach((c) => appendCombatLog(`${c.name} (NPC) dołącza do walki`));
+    additions.forEach((c) =>
+      appendCombatLog(`${c.name} (NPC) dołącza do walki`, {
+        actorId: c.id,
+        round: combatRound
+      })
+    );
   };
 
   const handleAddMonsterCombatants = (ids: string[]) => {
@@ -842,7 +900,10 @@ export function App() {
       selected.forEach((monster) => {
         const combatant = toCombatantFromMonster(monster, merged);
         merged.push(combatant);
-        appendCombatLog(`${combatant.name} (Potwór) dołącza do walki`);
+        appendCombatLog(`${combatant.name} (Potwór) dołącza do walki`, {
+          actorId: combatant.id,
+          round: combatRound
+        });
       });
       ensureActiveCombatant(merged);
       return merged;
@@ -867,7 +928,10 @@ export function App() {
       ensureActiveCombatant(merged);
       return merged;
     });
-    appendCombatLog(`${combatant.name} (ad hoc) dołącza do walki`);
+    appendCombatLog(`${combatant.name} (ad hoc) dołącza do walki`, {
+      actorId: combatant.id,
+      round: combatRound
+    });
   };
 
   const handleUpdateInitiative = (id: string, value: number) => {
@@ -952,7 +1016,8 @@ export function App() {
         updateHpForEntity(c.id, hpCurrent, c.kind);
         const actorName = actor?.name ?? "Nieznany";
         appendCombatLog(
-          `${actorName} -> ${c.name}: DMG ${amount} (HP ${hpCurrent}/${c.hpMax})`
+          `${actorName} -> ${c.name}: DMG ${amount} (HP ${hpCurrent}/${c.hpMax})`,
+          { actorId, targetId, round: combatRound }
         );
         return { ...c, hpCurrent };
       });
@@ -973,7 +1038,8 @@ export function App() {
         updateHpForEntity(c.id, hpCurrent, c.kind);
         const actorName = actor?.name ?? "Nieznany";
         appendCombatLog(
-          `${actorName} -> ${c.name}: HEAL ${amount} (HP ${hpCurrent}/${c.hpMax})`
+          `${actorName} -> ${c.name}: HEAL ${amount} (HP ${hpCurrent}/${c.hpMax})`,
+          { actorId, targetId, round: combatRound }
         );
         return { ...c, hpCurrent };
       });
@@ -994,7 +1060,11 @@ export function App() {
           : c
       );
       const actorName = actor?.name ?? "Nieznany";
-      appendCombatLog(`${actorName} -> ${target.name}: +${condition.trim()}`);
+      appendCombatLog(`${actorName} -> ${target.name}: +${condition.trim()}`, {
+        actorId,
+        targetId,
+        round: combatRound
+      });
       return updated;
     });
     const target = combatants.find((c) => c.id === targetId);
@@ -1021,7 +1091,11 @@ export function App() {
           : c
       );
       const actorName = actor?.name ?? "Nieznany";
-      appendCombatLog(`${actorName} -> ${target.name}: -${condition}`);
+      appendCombatLog(`${actorName} -> ${target.name}: -${condition}`, {
+        actorId,
+        targetId,
+        round: combatRound
+      });
       return updated;
     });
     const target = combatants.find((c) => c.id === targetId);
@@ -1050,7 +1124,7 @@ export function App() {
   };
 
   const handleEndCombat = () => {
-    appendCombatLog("Walka zakończona");
+    appendCombatLog("Walka zakończona", { round: combatRound });
     setLogEntries((prev) => [
       { id: `log-${Date.now()}`, text: `Zakończono walkę (runda ${combatRound})` },
       ...prev
@@ -1588,7 +1662,10 @@ export function App() {
                     abilities: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 },
                     spells: [],
                     inventory: [],
-                    features: []
+                    features: [],
+                    legendary: false,
+                    legendaryDescription: "",
+                    legendaryAttacks: []
                   }),
                   ...patch
                 })}

@@ -17,6 +17,9 @@ export type CombatLogEntry = {
   id: string;
   timestamp: string;
   message: string;
+  actorId?: string;
+  targetId?: string;
+  round?: number;
 };
 
 export type CombatSnapshot = {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { Monster } from "../types/monster";
 import type { MonsterRepository } from "../repositories/MonsterRepository";
 import { MonsterForm } from "./MonsterForm";
@@ -19,13 +19,23 @@ const defaultMonster = (): Monster => ({
   cr: 1,
   hpMax: 10,
   ac: 12,
-  speed: 30,
+  speed: "30 ft",
+  str: 10,
+  dex: 10,
+  con: 10,
+  int: 10,
+  wis: 10,
+  cha: 10,
   size: "Medium",
   alignment: "Neutral",
   movement: { walk: true, fly: false, swim: false },
   traits: [],
   actions: [],
-  weaknesses: "",
+  weaknesses: [],
+  legendary: false,
+  legendaryDescription: "",
+  legendaryAttacks: [],
+  languages: [],
   notes: ""
 });
 
@@ -49,7 +59,10 @@ export function MonsterListView({
   const [alignmentFilter, setAlignmentFilter] = useState<string>("all");
   const [movementFilter, setMovementFilter] = useState({ walk: false, fly: false, swim: false });
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editing, setEditing] = useState(false);
+  const [isCreating, setIsCreating] = useState(false);
+  const [editingMonsterId, setEditingMonsterId] = useState<string | null>(null);
+  const [draftMonster, setDraftMonster] = useState<Monster | null>(null);
+  const formRef = useRef<HTMLDivElement | null>(null);
 
   const types = useMemo(() => Array.from(new Set(monsters.map((m) => m.type))), [monsters]);
   const sizes = useMemo(
@@ -100,21 +113,32 @@ export function MonsterListView({
   }, [monsters, searchText, crFilter, typeFilter, sizeFilter, alignmentFilter, movementFilter]);
 
   const selectedMonster = monsters.find((m) => m.id === selectedId) || null;
+  const isFormVisible = isCreating || editingMonsterId !== null;
 
   const startCreate = () => {
     const monster = defaultMonster();
     setSelectedId(monster.id);
-    setEditing(true);
+    setIsCreating(true);
+    setEditingMonsterId(null);
+    setDraftMonster(monster);
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const startEdit = (id: string) => {
+    const monster = monsters.find((entry) => entry.id === id);
+    if (!monster) return;
     setSelectedId(id);
-    setEditing(true);
+    setIsCreating(false);
+    setEditingMonsterId(id);
+    setDraftMonster(monster);
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   const startView = (id: string) => {
     setSelectedId(id);
-    setEditing(false);
+    setIsCreating(false);
+    setEditingMonsterId(null);
+    setDraftMonster(null);
   };
 
   const handleSave = async (monster: Monster) => {
@@ -122,7 +146,9 @@ export function MonsterListView({
     const updated = await repository.list();
     onMonstersChange(updated);
     setSelectedId(monster.id);
-    setEditing(false);
+    setIsCreating(false);
+    setEditingMonsterId(null);
+    setDraftMonster(null);
   };
 
   return (
@@ -211,6 +237,33 @@ export function MonsterListView({
         </label>
       </div>
 
+      {isFormVisible && draftMonster ? (
+        <div ref={formRef} className="panel" style={{ marginTop: 12 }}>
+          <div className="panel__header">
+            <h3>{editingMonsterId ? "Edytuj potwora" : "Nowy potwór"}</h3>
+            <button
+              className="btn btn--ghost"
+              onClick={() => {
+                setIsCreating(false);
+                setEditingMonsterId(null);
+                setDraftMonster(null);
+              }}
+            >
+              Zamknij
+            </button>
+          </div>
+          <MonsterForm
+            monster={draftMonster}
+            onSave={handleSave}
+            onCancel={() => {
+              setIsCreating(false);
+              setEditingMonsterId(null);
+              setDraftMonster(null);
+            }}
+          />
+        </div>
+      ) : null}
+
       <div className="notes">
         {filtered.map((m) => (
           <article
@@ -237,16 +290,8 @@ export function MonsterListView({
         ))}
       </div>
 
-      {selectedMonster ? (
-        editing ? (
-          <MonsterForm monster={selectedMonster} onSave={handleSave} onCancel={() => setEditing(false)} />
-        ) : (
-          <MonsterDetail monster={selectedMonster} onEdit={() => startEdit(selectedMonster.id)} />
-        )
-      ) : null}
-
-      {editing && !selectedMonster ? (
-        <MonsterForm monster={defaultMonster()} onSave={handleSave} onCancel={() => setEditing(false)} />
+      {selectedMonster && !isFormVisible ? (
+        <MonsterDetail monster={selectedMonster} onEdit={() => startEdit(selectedMonster.id)} />
       ) : null}
     </div>
   );

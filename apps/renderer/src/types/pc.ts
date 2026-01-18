@@ -25,6 +25,12 @@ export type Feature = {
   note?: string;
 };
 
+export type LegendaryAttack = {
+  id: string;
+  name: string;
+  description?: string;
+};
+
 export type Spell = {
   id: string;
   name: string;
@@ -50,4 +56,7 @@ export type PlayerCharacter = {
   inventory?: InventoryItem[];
   features?: Feature[];
   spells?: Spell[];
+  legendary: boolean;
+  legendaryDescription?: string;
+  legendaryAttacks: LegendaryAttack[];
 };

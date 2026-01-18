@@ -102,6 +102,26 @@ export function CombatView({
     [monsters, selectedCombatant]
   );
 
+  const renderDetailItems = (
+    items: { id: string; name: string; description?: string; note?: string; text?: string }[]
+  ) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {items.map((item) => {
+        const detail = item.description || item.note || item.text || "";
+        return (
+          <div key={item.id}>
+            <strong>{item.name}</strong>
+            {detail ? (
+              <div style={{ color: "var(--muted)", fontSize: 12, whiteSpace: "pre-line" }}>
+                {detail}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   useEffect(() => {
     if (activeCombatantId && combatants.some((c) => c.id === activeCombatantId)) {
       setSelectedTargetId(activeCombatantId);
@@ -568,11 +588,7 @@ export function CombatView({
                 {selectedPc.features.length ? (
                   <div>
                     <strong>Cechy</strong>
-                    <ul className="detail-list">
-                      {selectedPc.features.map((feature) => (
-                        <li key={feature.id}>{feature.name}</li>
-                      ))}
-                    </ul>
+                    {renderDetailItems(selectedPc.features)}
                   </div>
                 ) : null}
                 {selectedPc.skills?.length ? (
@@ -602,11 +618,7 @@ export function CombatView({
                 {selectedPc.spells.length ? (
                   <div>
                     <strong>Czary</strong>
-                    <ul className="detail-list">
-                      {selectedPc.spells.map((spell) => (
-                        <li key={spell.id}>{spell.name}</li>
-                      ))}
-                    </ul>
+                    {renderDetailItems(selectedPc.spells)}
                   </div>
                 ) : null}
               </div>
@@ -617,14 +629,10 @@ export function CombatView({
                 <div className="muted">
                   {selectedNpc.hpCurrent}/{selectedNpc.hpMax} HP • AC {selectedNpc.ac}
                 </div>
-                {selectedNpc.attacks?.length ? (
+                {selectedNpc.abilities?.length ? (
                   <div>
                     <strong>Ataki</strong>
-                    <ul className="detail-list">
-                      {selectedNpc.attacks.map((attack) => (
-                        <li key={attack.id}>{attack.name}</li>
-                      ))}
-                    </ul>
+                    {renderDetailItems(selectedNpc.abilities)}
                   </div>
                 ) : null}
                 {selectedNpc.dmNotes ? (
@@ -653,30 +661,44 @@ export function CombatView({
                     .filter(Boolean)
                     .join(", ") || "brak"}
                 </div>
+                {selectedMonster.languages?.length ? (
+                  <div className="muted">Języki: {selectedMonster.languages.join(", ")}</div>
+                ) : null}
+                {selectedMonster.legendary ? (
+                  <div>
+                    <strong>Legendarny</strong>
+                    {selectedMonster.legendaryDescription ? (
+                      <div className="muted">{selectedMonster.legendaryDescription}</div>
+                    ) : null}
+                    {selectedMonster.legendaryAttacks?.length ? (
+                      <div>
+                        <strong>Ataki legendarne</strong>
+                        {renderDetailItems(
+                          selectedMonster.legendaryAttacks.map((attack) => ({
+                            ...attack,
+                            note: attack.description ?? ""
+                          }))
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
                 {selectedMonster.traits.length ? (
                   <div>
                     <strong>Traits</strong>
-                    <ul className="detail-list">
-                      {selectedMonster.traits.map((trait) => (
-                        <li key={trait.id}>{trait.name}</li>
-                      ))}
-                    </ul>
+                    {renderDetailItems(selectedMonster.traits)}
                   </div>
                 ) : null}
                 {selectedMonster.actions.length ? (
                   <div>
                     <strong>Akcje</strong>
-                    <ul className="detail-list">
-                      {selectedMonster.actions.map((action) => (
-                        <li key={action.id}>{action.name}</li>
-                      ))}
-                    </ul>
+                    {renderDetailItems(selectedMonster.actions)}
                   </div>
                 ) : null}
-                {selectedMonster.weaknesses ? (
+                {selectedMonster.weaknesses?.length ? (
                   <div>
                     <strong>Słabości</strong>
-                    <div className="muted">{selectedMonster.weaknesses}</div>
+                    {renderDetailItems(selectedMonster.weaknesses)}
                   </div>
                 ) : null}
                 {selectedMonster.notes ? (

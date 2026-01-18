@@ -11,6 +11,15 @@ export function MonsterDetail({ monster, onEdit }: MonsterDetailProps) {
     monster.movement?.fly ? "lata" : null,
     monster.movement?.swim ? "pływa" : null
   ].filter(Boolean);
+  type MonsterAbilityKey = "str" | "dex" | "con" | "int" | "wis" | "cha";
+  const abilityFields: { key: MonsterAbilityKey; label: string }[] = [
+    { key: "str", label: "Siła (STR)" },
+    { key: "dex", label: "Zręczność (DEX)" },
+    { key: "con", label: "Kondycja (CON)" },
+    { key: "int", label: "Inteligencja (INT)" },
+    { key: "wis", label: "Mądrość (WIS)" },
+    { key: "cha", label: "Charyzma (CHA)" }
+  ];
 
   return (
     <div className="panel" style={{ marginTop: 12 }}>
@@ -31,7 +40,54 @@ export function MonsterDetail({ monster, onEdit }: MonsterDetailProps) {
       {movement.length ? (
         <div className="pinned-card__detail">Ruch: {movement.join(", ")}</div>
       ) : null}
-      {monster.weaknesses ? <p className="pinned-card__detail">Słabości: {monster.weaknesses}</p> : null}
+      {monster.languages?.length ? (
+        <div className="pinned-card__detail">Języki: {monster.languages.join(", ")}</div>
+      ) : null}
+      {monster.legendary ? (
+        <div className="panel__section">
+          <h4>Legendarny</h4>
+          {monster.legendaryDescription ? (
+            <p className="muted">{monster.legendaryDescription}</p>
+          ) : null}
+          {monster.legendaryAttacks?.length ? (
+            <div>
+              <strong>Ataki legendarne</strong>
+              <ul className="log">
+                {monster.legendaryAttacks.map((attack) => (
+                  <li key={attack.id} className="log__item">
+                    <strong>{attack.name}</strong>
+                    {attack.description ? <span> — {attack.description}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+      <div className="panel__section">
+        <h4>Atrybuty</h4>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {abilityFields.map(({ key, label }) => (
+            <div key={String(key)} className="form-field">
+              <span>{label}</span>
+              <div className="pill pill--tag">{monster[key] ?? 10}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+      {monster.weaknesses && monster.weaknesses.length ? (
+        <div className="panel__section">
+          <h4>Słabości</h4>
+          <ul className="log">
+            {monster.weaknesses.map((weakness) => (
+              <li key={weakness.id} className="log__item">
+                <strong>{weakness.name}</strong>
+                {weakness.note ? <span> — {weakness.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {monster.notes ? <p className="pinned-card__detail">Notatki: {monster.notes}</p> : null}
 
       {monster.traits && monster.traits.length ? (
