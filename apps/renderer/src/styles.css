@@ -253,7 +253,7 @@ body {
   padding: 10px;
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
   background: rgba(255, 255, 255, 0.02);
   cursor: pointer;
   transition: border-color 0.1s ease, box-shadow 0.1s ease;
@@ -269,9 +269,38 @@ body {
   text-transform: uppercase;
 }
 
+.scene-item__description {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.scene-item__meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.scene-item__actions {
+  display: flex;
+  gap: 6px;
+}
+
 .scene-item--active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.2);
+}
+
+.scene-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.scene-form__actions {
+  display: flex;
+  gap: 8px;
 }
 
 .initiative-list {
@@ -355,11 +384,35 @@ body {
   gap: 6px;
 }
 
+.note-card__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .filter-row {
-  display: grid;
-  grid-template-columns: 1fr 160px 160px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 8px;
+  align-items: center;
+}
+
+.filter-row .input {
+  min-width: 160px;
+}
+
+.filter-row--monsters .input {
+  flex: 1 1 180px;
+}
+
+.filter-row--monsters .input:first-child {
+  flex: 2 1 240px;
+}
+
+.filter-row--monsters .checkbox {
+  flex: 0 0 auto;
 }
 
 .list-rows {
@@ -620,9 +673,30 @@ body {
 .combat-layout {
   flex: 1;
   display: grid;
-  grid-template-columns: 280px 1fr 320px;
+  grid-template-columns: 280px minmax(360px, 1fr) 300px 320px;
   gap: 12px;
   padding: 12px;
+}
+
+.combat-detail-panel {
+  position: sticky;
+  top: 12px;
+  align-self: start;
+}
+
+@media (max-width: 1200px) {
+  .combat-layout {
+    grid-template-columns: 260px 1fr;
+  }
+
+  .combat-participants-panel {
+    grid-column: 1 / -1;
+  }
+
+  .combat-detail-panel {
+    position: static;
+    grid-column: 1 / -1;
+  }
 }
 
 .add-combatant-grid {
@@ -668,4 +742,44 @@ body {
 .pc-card--active {
   border-color: var(--accent);
   box-shadow: 0 0 0 1px rgba(76, 194, 255, 0.25);
+}
+
+.pc-card--selected {
+  border-color: var(--accent-strong);
+  box-shadow: 0 0 0 1px rgba(255, 123, 114, 0.25);
+}
+
+.detail-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.detail-card__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.detail-card__name {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.detail-card__section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detail-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
 }

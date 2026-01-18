@@ -21,6 +21,7 @@ export type NPCAbilities = {
 
 export type NPC = {
   id: string;
+  campaignId: string;
   name: string;
   role: string;
   faction?: string;

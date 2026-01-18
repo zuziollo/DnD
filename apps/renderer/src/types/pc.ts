@@ -33,6 +33,7 @@ export type Spell = {
 
 export type PlayerCharacter = {
   id: string;
+  campaignId: string;
   name: string;
   className: string;
   level: number;

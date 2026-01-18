@@ -46,6 +46,7 @@ export function PCForm({ initial, onSubmit, onCancel }: PCFormProps) {
     const cleanClass = className.trim();
     const payload: PlayerCharacter = {
       id: initial?.id ?? `pc-${Date.now()}`,
+      campaignId: initial?.campaignId ?? "",
       name: trimmed,
       className: cleanClass || "Adventurer",
       level: Number(level) || 1,

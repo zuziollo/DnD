@@ -9,7 +9,6 @@ type RightPanelProps = {
   onUnpinNpc: (id: string) => void;
   onOpenPCs: () => void;
   onUpdatePC: (id: string, patch: Partial<PlayerCharacter>) => void;
-  onOpenNPCs: () => void;
 };
 
 export function RightPanel({
@@ -19,8 +18,7 @@ export function RightPanel({
   onPinNpc,
   onUnpinNpc,
   onOpenPCs,
-  onUpdatePC,
-  onOpenNPCs
+  onUpdatePC
 }: RightPanelProps) {
   const pinnedNPCs = npcs.filter((npc) => pinnedNpcIds.includes(npc.id));
   const firstNpcId = npcs[0]?.id ?? "";
@@ -71,9 +69,6 @@ export function RightPanel({
         <div className="panel__header">
           <h2>Przypięte NPC / Lokacje</h2>
           <div style={{ display: "flex", gap: 8 }}>
-            <button className="btn" onClick={onOpenNPCs}>
-              Biblioteka NPC
-            </button>
             <select
               className="input"
               value={firstNpcId}

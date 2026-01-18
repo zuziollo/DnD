@@ -1,15 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { TopBar } from "./components/TopBar";
 import { LeftPanel } from "./components/LeftPanel";
 import { CenterPanel } from "./components/CenterPanel";
 import { RightPanel } from "./components/RightPanel";
 import { CombatView } from "./components/CombatView";
 import { StartView } from "./components/StartView";
-import { CampaignView } from "./components/CampaignView";
 import { ErrorScreen } from "./components/ErrorScreen";
 import { PCListView } from "./components/PCListView";
 import { NPCListView } from "./components/NPCListView";
 import { MonsterListView } from "./components/MonsterListView";
+import { SessionLogsView } from "./components/SessionLogsView";
+import { JsonMonsterRepository } from "./repositories/MonsterRepository";
 import type { PlayerCharacter } from "./types/pc";
 import type { NPC } from "./types/npc";
 import type { Monster } from "./types/monster";
@@ -22,13 +23,40 @@ type SessionMeta = {
   id: string;
   campaignId: string;
   name: string;
-  status: "planned" | "active" | "done";
+  createdAt: string;
+  status: "planned" | "active" | "ended";
+};
+type SceneStatus = "UPCOMING" | "ACTIVE" | "DONE";
+type Scene = {
+  id: string;
+  title: string;
+  description?: string;
+  status: SceneStatus;
+  order: number;
 };
 
-const mockScenes = [
-  { id: "scene-1", title: "Prolog: Tawerna", status: "active" as const },
-  { id: "scene-2", title: "Droga przez las", status: "upcoming" as const },
-  { id: "scene-3", title: "Obóz bandytów", status: "upcoming" as const }
+const mockScenes: Scene[] = [
+  {
+    id: "scene-1",
+    title: "Prolog: Tawerna",
+    description: "Pierwszy kontakt z zleceniodawcą.",
+    status: "ACTIVE",
+    order: 1
+  },
+  {
+    id: "scene-2",
+    title: "Droga przez las",
+    description: "Spotkanie losowe w drodze.",
+    status: "UPCOMING",
+    order: 2
+  },
+  {
+    id: "scene-3",
+    title: "Obóz bandytów",
+    description: "Konfrontacja i śledztwo.",
+    status: "UPCOMING",
+    order: 3
+  }
 ];
 
 const mockNotes: Note[] = [
@@ -67,6 +95,37 @@ function normalizeCombatLogEntries(entries?: any[]): CombatLogEntry[] {
   }));
 }
 
+function normalizeScenes(scenes?: Scene[]): Scene[] {
+  const source = Array.isArray(scenes) && scenes.length ? scenes : mockScenes;
+  return source.map((scene, index) => ({
+    id: scene.id ?? `scene-${Date.now()}-${index}`,
+    title: scene.title ?? `Scena ${index + 1}`,
+    description: scene.description ?? "",
+    status:
+      scene.status === "ACTIVE" || scene.status === "DONE" || scene.status === "UPCOMING"
+        ? scene.status
+        : scene.status === "active"
+        ? "ACTIVE"
+        : scene.status === "done"
+        ? "DONE"
+        : "UPCOMING",
+    order: scene.order ?? index + 1
+  }));
+}
+
+function resolveActiveSceneId(scenes: Scene[], desiredId?: string | null): string | null {
+  if (desiredId && scenes.some((scene) => scene.id === desiredId)) return desiredId;
+  const active = scenes.find((scene) => scene.status === "ACTIVE");
+  if (active) return active.id;
+  return scenes[0]?.id ?? null;
+}
+
+const normalizeSessionStatus = (status?: string): Session["status"] => {
+  if (status === "active") return "active";
+  if (status === "ended" || status === "done") return "ended";
+  return "planned";
+};
+
 function buildMonsterCombatant(
   monster: Monster,
   existing: Combatant[]
@@ -90,7 +149,8 @@ function buildMonsterCombatant(
 
 type SessionState = {
   mode: "LIVE" | "COMBAT";
-  activeSceneId: string;
+  activeSceneId: string | null;
+  scenes: Scene[];
   notes: Note[];
   logEntries: LogEntry[];
   combatLog: CombatLogEntry[];
@@ -102,8 +162,11 @@ type SessionState = {
 
 type Session = {
   id: string;
+  campaignId: string;
   title: string;
+  createdAt: string;
   lastPlayedAt: string;
+  status: "planned" | "active" | "ended";
   state: SessionState;
 };
 
@@ -166,13 +229,19 @@ declare global {
 }
 
 export function App() {
+  const defaultScenes = normalizeScenes();
+  const defaultActiveSceneId = resolveActiveSceneId(defaultScenes, null);
   const defaultSession: Session = {
     id: "session-1",
+    campaignId: "campaign-1",
     title: "Sesja 1",
+    createdAt: new Date().toISOString(),
     lastPlayedAt: new Date().toISOString(),
+    status: "planned",
     state: {
       mode: "LIVE",
-      activeSceneId: "scene-1",
+      activeSceneId: defaultActiveSceneId,
+      scenes: defaultScenes,
       notes: mockNotes,
       logEntries: mockLog,
       combatLog: defaultCombatLog,
@@ -207,6 +276,7 @@ export function App() {
       id: defaultSession.id,
       campaignId: defaultCampaign.id,
       name: defaultSession.title,
+      createdAt: defaultSession.createdAt,
       status: "planned"
     }
   ]);
@@ -223,9 +293,14 @@ export function App() {
     activeCampaign?.sessions.find((s) => s.id === activeSessionId) ||
     activeCampaign?.sessions[0] ||
     defaultSession;
+  const resolvedCampaignId =
+    activeCampaignId ?? activeCampaign?.id ?? campaignIndex[0]?.id ?? defaultCampaign.id;
 
   const [mode, setMode] = useState<SessionState["mode"]>(activeSession.state.mode);
-  const [activeSceneId, setActiveSceneId] = useState<string>(activeSession.state.activeSceneId);
+  const [activeSceneId, setActiveSceneId] = useState<string | null>(
+    resolveActiveSceneId(activeSession.state.scenes ?? defaultScenes, activeSession.state.activeSceneId)
+  );
+  const [scenes, setScenes] = useState<Scene[]>(normalizeScenes(activeSession.state.scenes));
   const [notes, setNotes] = useState<typeof mockNotes>(activeSession.state.notes);
   const [logEntries, setLogEntries] = useState<typeof mockLog>(activeSession.state.logEntries);
   const [noteTag, setNoteTag] = useState<string>("NPC");
@@ -243,6 +318,7 @@ export function App() {
     normalizeCombatLogEntries(activeSession.state.combatLog)
   );
   const [combatHistory, setCombatHistory] = useState<CombatSnapshot[]>([]);
+  const [combatResetCounter, setCombatResetCounter] = useState(0);
   const [playerCharacters, setPlayerCharacters] = useState<PlayerCharacter[]>([]);
   const pcSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [pcLibraryOpen, setPcLibraryOpen] = useState(false);
@@ -252,6 +328,8 @@ export function App() {
   const [monsters, setMonsters] = useState<Monster[]>([]);
   const monsterSaveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [monsterLibraryOpen, setMonsterLibraryOpen] = useState(false);
+  const [sessionLogsOpen, setSessionLogsOpen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<string>("");
   const [pinnedNpcIds, setPinnedNpcIds] = useState<string[]>(activeSession.state.pinnedNpcIds ?? []);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [pingValue, setPingValue] = useState<string>("");
@@ -259,6 +337,14 @@ export function App() {
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [loadInfo, setLoadInfo] = useState<string>("");
   const saveTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const monsterRepository = useMemo(
+    () => new JsonMonsterRepository(window.dmStore),
+    []
+  );
+  const campaignPlayerCharacters = playerCharacters.filter(
+    (pc) => pc.campaignId === resolvedCampaignId
+  );
+  const campaignNpcs = npcs.filter((npc) => npc.campaignId === resolvedCampaignId);
 
   const serializeState = (customCampaigns?: Campaign[]): AppState => ({
     schemaVersion: defaultState.schemaVersion,
@@ -277,6 +363,7 @@ export function App() {
                 state: {
                   mode,
                   activeSceneId,
+                  scenes,
                   notes,
                   logEntries,
                   combatLog,
@@ -304,17 +391,35 @@ export function App() {
     setNoteText("");
   };
 
-  const handleClearLog = () => setLogEntries([]);
+  const handleDeleteNote = (id: string) => {
+    if (!window.confirm("Usunąć notatkę?")) return;
+    setNotes((prev) => prev.filter((note) => note.id !== id));
+  };
 
-  const handleSceneSelect = (id: string) => {
+  const handleSaveSession = async () => {
+    const payload = serializeState();
+    await window.dmStore?.saveState?.(payload);
+    const timestamp = new Date().toLocaleTimeString();
+    setSaveStatus(`Zapisano ${timestamp}`);
+    setTimeout(() => setSaveStatus(""), 2500);
+  };
+
+  const handleSetActiveScene = (id: string) => {
     console.log("[SceneSelect] clicked", id);
+    setScenes((prev) =>
+      prev.map((scene) => {
+        if (scene.id === id) return { ...scene, status: "ACTIVE" };
+        if (scene.status === "ACTIVE") return { ...scene, status: "DONE" };
+        return scene;
+      })
+    );
     setActiveSceneId(id);
   };
 
   useEffect(() => {
-    const scene = mockScenes.find((s) => s.id === activeSceneId);
+    const scene = scenes.find((s) => s.id === activeSceneId);
     console.log("[ActiveScene] now", scene?.title ?? activeSceneId);
-  }, [activeSceneId]);
+  }, [activeSceneId, scenes]);
 
   const handleToggleMode = () =>
     setMode((prev) => (prev === "LIVE" ? "COMBAT" : "LIVE"));
@@ -328,12 +433,87 @@ export function App() {
     setPinnedNpcIds((prev) => prev.filter((p) => p !== id));
   };
 
+  const handleAddScene = (scene: Omit<Scene, "id" | "order">) => {
+    setScenes((prev) => {
+      const maxOrder = prev.length ? Math.max(...prev.map((s) => s.order)) : 0;
+      const newScene: Scene = {
+        id: `scene-${Date.now()}`,
+        title: scene.title,
+        description: scene.description,
+        status: scene.status ?? "UPCOMING",
+        order: maxOrder + 1
+      };
+      const updated = scene.status === "ACTIVE"
+        ? prev.map((s) => (s.status === "ACTIVE" ? { ...s, status: "DONE" } : s))
+        : prev;
+      if (scene.status === "ACTIVE") {
+        setActiveSceneId(newScene.id);
+      } else if (!activeSceneId) {
+        setActiveSceneId(newScene.id);
+      }
+      return [...updated, newScene];
+    });
+  };
+
+  const handleUpdateScene = (id: string, patch: Partial<Omit<Scene, "id" | "order">>) => {
+    setScenes((prev) => {
+      const updated = prev.map((scene) =>
+        scene.id === id ? { ...scene, ...patch } : scene
+      );
+      if (patch.status === "ACTIVE") {
+        return updated.map((scene) =>
+          scene.id === id
+            ? { ...scene, status: "ACTIVE" }
+            : scene.status === "ACTIVE"
+            ? { ...scene, status: "DONE" }
+            : scene
+        );
+      }
+      return updated;
+    });
+    if (patch.status === "ACTIVE") {
+      setActiveSceneId(id);
+    } else if (activeSceneId === id && patch.status && patch.status !== "ACTIVE") {
+      setActiveSceneId(null);
+    }
+  };
+
+  const handleDeleteScene = (id: string) => {
+    setScenes((prev) => prev.filter((scene) => scene.id !== id));
+    if (activeSceneId === id) {
+      setActiveSceneId(null);
+    }
+  };
+
+  const handleMoveScene = (id: string, direction: "up" | "down") => {
+    setScenes((prev) => {
+      const sorted = [...prev].sort((a, b) => a.order - b.order);
+      const index = sorted.findIndex((scene) => scene.id === id);
+      const targetIndex = direction === "up" ? index - 1 : index + 1;
+      if (index === -1 || targetIndex < 0 || targetIndex >= sorted.length) return prev;
+      const current = sorted[index];
+      const target = sorted[targetIndex];
+      return prev.map((scene) => {
+        if (scene.id === current.id) return { ...scene, order: target.order };
+        if (scene.id === target.id) return { ...scene, order: current.order };
+        return scene;
+      });
+    });
+  };
+
   const handleOpenPCLibrary = () => setPcLibraryOpen(true);
   const handleClosePCLibrary = () => setPcLibraryOpen(false);
   const handleOpenNPCLibrary = () => setNpcLibraryOpen(true);
   const handleCloseNPCLibrary = () => setNpcLibraryOpen(false);
   const handleOpenMonsterLibrary = () => setMonsterLibraryOpen(true);
   const handleCloseMonsterLibrary = () => setMonsterLibraryOpen(false);
+  const handleOpenSessionLogs = () => {
+    setPcLibraryOpen(false);
+    setNpcLibraryOpen(false);
+    setMonsterLibraryOpen(false);
+    setSessionLogsOpen(true);
+  };
+  const handleCloseSessionLogs = () => setSessionLogsOpen(false);
 
   const handleReset = async () => {
     await window.dmStore?.resetState?.();
@@ -342,6 +522,7 @@ export function App() {
     setActiveSessionId(defaultState.activeSessionId);
     setMode(defaultSession.state.mode);
     setActiveSceneId(defaultSession.state.activeSceneId);
+    setScenes(defaultSession.state.scenes);
     setNotes(defaultSession.state.notes);
     setLogEntries(defaultSession.state.logEntries);
     setCombatLog(defaultSession.state.combatLog);
@@ -393,6 +574,28 @@ export function App() {
     setActiveCampaignId(undefined);
     setActiveSessionId(undefined);
   };
+
+  const markSessionActive = (campaignId: string, sessionId: string) => {
+    setSessionsIndex((prev) =>
+      prev.map((session) => {
+        if (session.campaignId !== campaignId) return session;
+        if (session.id === sessionId) return { ...session, status: "active" };
+        return session.status === "active" ? { ...session, status: "planned" } : session;
+      })
+    );
+    setCampaigns((prev) =>
+      prev.map((campaign) => {
+        if (campaign.id !== campaignId) return campaign;
+        return {
+          ...campaign,
+          sessions: campaign.sessions.map((session) => {
+            if (session.id === sessionId) return { ...session, status: "active" };
+            return session.status === "active" ? { ...session, status: "planned" } : session;
+          })
+        };
+      })
+    );
+  };
   const ensureSessionState = (
     campaignId: string,
     sessionId: string,
@@ -402,7 +605,11 @@ export function App() {
     setCampaigns((prev) => {
       const campaignExists = prev.find((c) => c.id === campaignId);
       if (!campaignExists) {
-        const newSession = createDefaultSession(sessionTitle, sessionId.replace("session-", ""));
+        const newSession = createDefaultSession(
+          campaignId,
+          sessionTitle,
+          sessionId.replace("session-", "")
+        );
         return [
           ...prev,
           {
@@ -426,7 +633,11 @@ export function App() {
               sessions: [
                 ...c.sessions,
                 {
-                  ...createDefaultSession(sessionTitle, sessionId.replace("session-", "")),
+                  ...createDefaultSession(
+                    campaignId,
+                    sessionTitle,
+                    sessionId.replace("session-", "")
+                  ),
                   id: sessionId
                 }
               ]
@@ -481,8 +692,15 @@ export function App() {
     setCombatLog((prev) => [...prev, entry]);
   };
 
-  const normalizePC = (pc: PlayerCharacter): PlayerCharacter => ({
+  const resolveCampaignId = (candidate?: string) => {
+    const trimmed = candidate?.trim();
+    if (trimmed) return trimmed;
+    return resolvedCampaignId;
+  };
+
+  const normalizePC = (pc: PlayerCharacter, fallbackCampaignId?: string): PlayerCharacter => ({
     ...pc,
+    campaignId: resolveCampaignId(pc.campaignId ?? fallbackCampaignId),
     description: pc.description ?? "",
     speed: pc.speed ?? 30,
     weaknesses: pc.weaknesses ?? "",
@@ -500,21 +718,36 @@ export function App() {
     features: pc.features ?? []
   });
 
+  const normalizeNPC = (npc: NPC, fallbackCampaignId?: string): NPC => ({
+    ...npc,
+    campaignId: resolveCampaignId(npc.campaignId ?? fallbackCampaignId)
+  });
+
   const handleUpsertPC = (pc: PlayerCharacter) => {
     setPlayerCharacters((prev) => {
-      const exists = prev.some((p) => p.id === pc.id);
+      const existing = prev.find((p) => p.id === pc.id);
+      const normalized = normalizePC(
+        { ...pc, campaignId: resolveCampaignId(pc.campaignId ?? existing?.campaignId) },
+        existing?.campaignId
+      );
+      const exists = !!existing;
       if (exists) {
-        return prev.map((p) => (p.id === pc.id ? normalizePC(pc) : p));
+        return prev.map((p) => (p.id === pc.id ? normalized : p));
       }
-      return [...prev, normalizePC(pc)];
+      return [...prev, normalized];
     });
   };
 
   const handleUpsertNPC = (npc: NPC) => {
     setNpcs((prev) => {
-      const exists = prev.some((n) => n.id === npc.id);
-      if (exists) return prev.map((n) => (n.id === npc.id ? { ...n, ...npc } : n));
-      return [...prev, npc];
+      const existing = prev.find((n) => n.id === npc.id);
+      const normalized = normalizeNPC(
+        { ...npc, campaignId: resolveCampaignId(npc.campaignId ?? existing?.campaignId) },
+        existing?.campaignId
+      );
+      const exists = !!existing;
+      if (exists) return prev.map((n) => (n.id === npc.id ? normalized : n));
+      return [...prev, normalized];
     });
   };
 
@@ -529,13 +762,9 @@ export function App() {
     notes: monster.notes ?? ""
   });
 
-  const handleUpsertMonster = (monster: Monster) => {
-    setMonsters((prev) => {
-      const exists = prev.some((m) => m.id === monster.id);
-      if (exists) return prev.map((m) => (m.id === monster.id ? normalizeMonster(monster) : m));
-      return [...prev, normalizeMonster(monster)];
-    });
-  };
+  const applyMonsters = useCallback((data: Monster[]) => {
+    setMonsters(data.map(normalizeMonster));
+  }, []);
 
   const toCombatantFromPC = (pc: PlayerCharacter): Combatant => ({
     id: pc.id,
@@ -571,7 +800,7 @@ export function App() {
   };
 
   const handleAddPCCombatants = (ids: string[]) => {
-    const additions = playerCharacters
+    const additions = campaignPlayerCharacters
       .filter((pc) => ids.includes(pc.id))
       .map((pc) => toCombatantFromPC(pc));
     if (!additions.length) return;
@@ -588,7 +817,7 @@ export function App() {
   };
 
   const handleAddNPCCombatants = (ids: string[]) => {
-    const additions = npcs
+    const additions = campaignNpcs
       .filter((npc) => ids.includes(npc.id))
       .map((npc) => toCombatantFromNPC(npc));
     if (!additions.length) return;
@@ -710,47 +939,65 @@ export function App() {
     );
   };
 
-  const handleDamage = (id: string, amount: number) => {
+  const handleDamage = (actorId: string, targetId: string, amount: number) => {
     if (!amount) return;
     pushCombatHistory();
     setCombatants((prev) => {
+      const actor = prev.find((c) => c.id === actorId);
+      const target = prev.find((c) => c.id === targetId);
+      if (!target) return prev;
       const updated = prev.map((c) => {
-        if (c.id !== id) return c;
+        if (c.id !== targetId) return c;
         const hpCurrent = Math.max(0, c.hpCurrent - amount);
         updateHpForEntity(c.id, hpCurrent, c.kind);
-        appendCombatLog(`${c.name} otrzymuje ${amount} obrażeń (HP ${hpCurrent}/${c.hpMax})`);
+        const actorName = actor?.name ?? "Nieznany";
+        appendCombatLog(
+          `${actorName} -> ${c.name}: DMG ${amount} (HP ${hpCurrent}/${c.hpMax})`
+        );
         return { ...c, hpCurrent };
       });
       return updated;
     });
   };
 
-  const handleHeal = (id: string, amount: number) => {
+  const handleHeal = (actorId: string, targetId: string, amount: number) => {
     if (!amount) return;
     pushCombatHistory();
     setCombatants((prev) => {
+      const actor = prev.find((c) => c.id === actorId);
+      const target = prev.find((c) => c.id === targetId);
+      if (!target) return prev;
       const updated = prev.map((c) => {
-        if (c.id !== id) return c;
+        if (c.id !== targetId) return c;
         const hpCurrent = Math.min(c.hpMax, c.hpCurrent + amount);
         updateHpForEntity(c.id, hpCurrent, c.kind);
-        appendCombatLog(`${c.name} leczy ${amount} (HP ${hpCurrent}/${c.hpMax})`);
+        const actorName = actor?.name ?? "Nieznany";
+        appendCombatLog(
+          `${actorName} -> ${c.name}: HEAL ${amount} (HP ${hpCurrent}/${c.hpMax})`
+        );
         return { ...c, hpCurrent };
       });
       return updated;
     });
   };
 
-  const handleAddCondition = (id: string, condition: string) => {
+  const handleAddCondition = (actorId: string, targetId: string, condition: string) => {
     if (!condition.trim()) return;
     pushCombatHistory();
-    setCombatants((prev) =>
-      prev.map((c) =>
-        c.id === id && !c.conditions.includes(condition.trim())
+    setCombatants((prev) => {
+      const actor = prev.find((c) => c.id === actorId);
+      const target = prev.find((c) => c.id === targetId);
+      if (!target) return prev;
+      const updated = prev.map((c) =>
+        c.id === targetId && !c.conditions.includes(condition.trim())
           ? { ...c, conditions: [...c.conditions, condition.trim()] }
           : c
-      )
-    );
-    const target = combatants.find((c) => c.id === id);
+      );
+      const actorName = actor?.name ?? "Nieznany";
+      appendCombatLog(`${actorName} -> ${target.name}: +${condition.trim()}`);
+      return updated;
+    });
+    const target = combatants.find((c) => c.id === targetId);
     if (target?.kind === "PC") {
       setPlayerCharacters((prev) =>
         prev.map((pc) =>
@@ -760,19 +1007,24 @@ export function App() {
         )
       );
     }
-    if (target) appendCombatLog(`${target.name} otrzymuje stan: ${condition.trim()}`);
   };
 
-  const handleRemoveCondition = (id: string, condition: string) => {
+  const handleRemoveCondition = (actorId: string, targetId: string, condition: string) => {
     pushCombatHistory();
-    setCombatants((prev) =>
-      prev.map((c) =>
-        c.id === id
+    setCombatants((prev) => {
+      const actor = prev.find((c) => c.id === actorId);
+      const target = prev.find((c) => c.id === targetId);
+      if (!target) return prev;
+      const updated = prev.map((c) =>
+        c.id === targetId
           ? { ...c, conditions: c.conditions.filter((cond: string) => cond !== condition) }
           : c
-      )
-    );
-    const target = combatants.find((c) => c.id === id);
+      );
+      const actorName = actor?.name ?? "Nieznany";
+      appendCombatLog(`${actorName} -> ${target.name}: -${condition}`);
+      return updated;
+    });
+    const target = combatants.find((c) => c.id === targetId);
     if (target?.kind === "PC") {
       setPlayerCharacters((prev) =>
         prev.map((pc) =>
@@ -788,24 +1040,42 @@ export function App() {
     restoreCombatSnapshot();
   };
 
+  const resetCombatState = () => {
+    setCombatants([]);
+    setCombatLog([]);
+    setCombatRound(1);
+    setActiveCombatantId("");
+    setCombatHistory([]);
+    setCombatResetCounter((prev) => prev + 1);
+  };
+
   const handleEndCombat = () => {
     appendCombatLog("Walka zakończona");
     setLogEntries((prev) => [
       { id: `log-${Date.now()}`, text: `Zakończono walkę (runda ${combatRound})` },
       ...prev
     ]);
+    resetCombatState();
     setMode("LIVE");
   };
 
-  const createDefaultSession = (title: string, idSuffix?: string): Session => {
+  const createDefaultSession = (
+    campaignId: string,
+    title: string,
+    idSuffix?: string
+  ): Session => {
     const now = new Date().toISOString();
     return {
       id: idSuffix ? `session-${idSuffix}` : `session-${Date.now()}`,
+      campaignId,
       title,
+      createdAt: now,
       lastPlayedAt: now,
+      status: "planned",
       state: {
         mode: "LIVE",
-        activeSceneId: "scene-1",
+        activeSceneId: defaultActiveSceneId,
+        scenes: defaultScenes,
         notes: mockNotes,
         logEntries: mockLog,
         combatLog: defaultCombatLog,
@@ -827,10 +1097,13 @@ export function App() {
       camp?.sessions.find((s) => s.id === activeSessionId) ||
       camp?.sessions[0];
     if (camp && session) {
+      const nextScenes = normalizeScenes(session.state.scenes);
+      const nextActiveSceneId = resolveActiveSceneId(nextScenes, session.state.activeSceneId);
       setActiveCampaignId(camp.id);
       setActiveSessionId(session.id);
       setMode(session.state.mode);
-      setActiveSceneId(session.state.activeSceneId);
+      setActiveSceneId(nextActiveSceneId);
+      setScenes(nextScenes);
       setNotes(session.state.notes);
       setLogEntries(session.state.logEntries);
       setCombatLog(normalizeCombatLogEntries(session.state.combatLog));
@@ -871,6 +1144,11 @@ export function App() {
             );
           } else if (saved.schemaVersion === 1 || saved.mode) {
             console.log("[State][renderer] migrating legacy state to campaigns structure");
+            const migratedScenes = normalizeScenes(saved.scenes);
+            const migratedActiveSceneId = resolveActiveSceneId(
+              migratedScenes,
+              saved.activeSceneId ?? defaultSession.state.activeSceneId
+            );
             const migratedCampaign: Campaign = {
               id: "campaign-1",
               name: "Domyślna kampania",
@@ -883,7 +1161,8 @@ export function App() {
                   lastPlayedAt: new Date().toISOString(),
                   state: {
                     mode: saved.mode ?? defaultSession.state.mode,
-                    activeSceneId: saved.activeSceneId ?? defaultSession.state.activeSceneId,
+                    activeSceneId: migratedActiveSceneId,
+                    scenes: migratedScenes,
                     notes: saved.notes ?? defaultSession.state.notes,
                     logEntries: saved.logEntries ?? defaultSession.state.logEntries,
                     combatLog: normalizeCombatLogEntries(saved.combatLog),
@@ -938,7 +1217,13 @@ export function App() {
         if (!mounted) return;
         if (data?.campaigns?.length) {
           setCampaignIndex(data.campaigns);
-          setSessionsIndex(data.sessions ?? []);
+          setSessionsIndex(
+            (data.sessions ?? []).map((session) => ({
+              ...session,
+              createdAt: session.createdAt ?? new Date().toISOString(),
+              status: normalizeSessionStatus(session.status)
+            }))
+          );
           if (!activeCampaignId) setActiveCampaignId(data.campaigns[0].id);
           const firstSession = data.sessions?.find(
             (s) => s.campaignId === (data.campaigns[0]?.id ?? "")
@@ -968,7 +1253,11 @@ export function App() {
       try {
         const pcs = await window.dmStore?.loadPCs?.();
         if (mounted && pcs) {
-          setPlayerCharacters(pcs.map(normalizePC));
+          const fallbackCampaignId =
+            activeCampaignId ?? campaignIndex[0]?.id ?? defaultCampaign.id;
+          setPlayerCharacters(
+            pcs.map((pc) => normalizePC(pc, fallbackCampaignId))
+          );
         }
       } catch (err) {
         console.error("[PC][renderer] load error", err);
@@ -986,7 +1275,11 @@ export function App() {
       try {
         const data = await window.dmStore?.loadNPCs?.();
         if (mounted && data) {
-          setNpcs(data as NPC[]);
+          const fallbackCampaignId =
+            activeCampaignId ?? campaignIndex[0]?.id ?? defaultCampaign.id;
+          setNpcs(
+            (data as NPC[]).map((npc) => normalizeNPC(npc, fallbackCampaignId))
+          );
         }
       } catch (err) {
         console.error("[NPC][renderer] load error", err);
@@ -998,22 +1291,25 @@ export function App() {
   }, []);
 
   // Load Monsters from storage
+  const refreshMonsters = useCallback(async () => {
+    try {
+      const data = await monsterRepository.list();
+      applyMonsters(data);
+    } catch (err) {
+      console.error("[Monster][renderer] load error", err);
+    }
+  }, [applyMonsters, monsterRepository]);
+
   useEffect(() => {
     let mounted = true;
     (async () => {
-      try {
-        const data = await window.dmStore?.loadMonsters?.();
-        if (mounted && data) {
-          setMonsters((data as Monster[]).map(normalizeMonster));
-        }
-      } catch (err) {
-        console.error("[Monster][renderer] load error", err);
-      }
+      if (!mounted) return;
+      await refreshMonsters();
     })();
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [refreshMonsters]);
 
   // Save campaigns index when it changes
   useEffect(() => {
@@ -1127,10 +1423,11 @@ export function App() {
       ) : (
         <>
           <TopBar
-            sessionName="Sesja 12: Tajemnice Ruin"
+            sessionName={sessionsIndex.find((s) => s.id === activeSessionId)?.name}
+            campaignName={campaignIndex.find((c) => c.id === activeCampaignId)?.name}
             mode={mode}
             onToggleMode={handleToggleMode}
-            onAddNote={handleAddNote}
+            onSaveSession={handleSaveSession}
             onReset={handleReset}
             onSaveNow={handleSaveNow}
             onShowPaths={handleShowPaths}
@@ -1140,6 +1437,8 @@ export function App() {
             onShowPCLibrary={handleOpenPCLibrary}
             onShowNPCLibrary={handleOpenNPCLibrary}
             onShowMonsterLibrary={handleOpenMonsterLibrary}
+            onShowSessionLogs={handleOpenSessionLogs}
+            saveStatus={saveStatus}
           />
           <div className="ping-banner">
             Preload ping: {pingValue || "…"} | Folder danych: {dataPath || "(ładowanie...)"}
@@ -1147,110 +1446,135 @@ export function App() {
           {monsterLibraryOpen ? (
             <MonsterListView
               monsters={monsters}
+              repository={monsterRepository}
+              onMonstersChange={applyMonsters}
               onClose={handleCloseMonsterLibrary}
-              onUpsert={handleUpsertMonster}
             />
+          ) : sessionLogsOpen ? (
+            <SessionLogsView logEntries={logEntries} onClose={handleCloseSessionLogs} />
           ) : npcLibraryOpen ? (
-            <NPCListView npcs={npcs} onClose={handleCloseNPCLibrary} onUpsert={handleUpsertNPC} />
+            <NPCListView
+              npcs={campaignNpcs}
+              onClose={handleCloseNPCLibrary}
+              onUpsert={handleUpsertNPC}
+            />
           ) : pcLibraryOpen ? (
             <PCListView
-              pcs={playerCharacters}
+              pcs={campaignPlayerCharacters}
               onClose={handleClosePCLibrary}
               onUpsert={handleUpsertPC}
             />
-          ) : !activeCampaignId ? (
+          ) : !activeCampaignId || !activeSessionId ? (
             <StartView
               campaigns={campaignIndex}
-              onEnter={(campaignId) => {
+              sessions={sessionsIndex.map((session) => ({
+                id: session.id,
+                campaignId: session.campaignId,
+                title: session.name,
+                status: session.status,
+                createdAt: session.createdAt
+              }))}
+              onOpenSession={(campaignId, sessionId) => {
                 setActiveCampaignId(campaignId);
-                const firstSession = sessionsIndex.find((s) => s.campaignId === campaignId);
-                setActiveSessionId(firstSession?.id);
-                if (firstSession) {
-                  const campName = campaignIndex.find((c) => c.id === campaignId)?.name;
-                  ensureSessionState(campaignId, firstSession.id, firstSession.name, campName);
-                  loadSessionIntoState(campaignId, firstSession.id);
-                }
+                setActiveSessionId(sessionId);
+                markSessionActive(campaignId, sessionId);
+                const sessionMeta = sessionsIndex.find((s) => s.id === sessionId);
+                const campName = campaignIndex.find((c) => c.id === campaignId)?.name;
+                ensureSessionState(
+                  campaignId,
+                  sessionId,
+                  sessionMeta?.name ?? "Nowa sesja",
+                  campName
+                );
+                loadSessionIntoState(campaignId, sessionId);
               }}
               onCreate={(name) => {
                 const id = `campaign-${Date.now()}`;
                 const createdAt = new Date().toISOString();
-                const sessionId = `session-${Date.now()}`;
                 setCampaignIndex((prev) => [...prev, { id, name, createdAt }]);
-                setSessionsIndex((prev) => [
+                setCampaigns((prev) => [
                   ...prev,
-                  { id: sessionId, campaignId: id, name: "Sesja 1", status: "planned" }
+                  {
+                    id,
+                    name,
+                    createdAt,
+                    updatedAt: createdAt,
+                    sessions: []
+                  }
                 ]);
-                ensureSessionState(id, sessionId, "Sesja 1", name);
-                setActiveCampaignId(id);
-                setActiveSessionId(sessionId);
-                loadSessionIntoState(id, sessionId);
               }}
-            />
-          ) : activeCampaignId && !activeSessionId ? (
-            <CampaignView
-              campaignName={
-                campaignIndex.find((c) => c.id === activeCampaignId)?.name || defaultCampaign.name
-              }
-              sessions={sessionsIndex
-                .filter((s) => s.campaignId === activeCampaignId)
-                .map((s) => ({ id: s.id, title: s.name, status: s.status }))}
-              onOpenSession={(sessionId: string) => {
-                setActiveSessionId(sessionId);
-                const sessionMeta = sessionsIndex.find((s) => s.id === sessionId);
-                if (sessionMeta) {
-                  const campName = campaignIndex.find((c) => c.id === activeCampaignId)?.name;
-                  ensureSessionState(activeCampaignId, sessionId, sessionMeta.name, campName);
-                  loadSessionIntoState(activeCampaignId, sessionId);
-                }
-              }}
-              onCreateSession={(title: string) => {
+              onCreateSession={(campaignId, title) => {
                 const sessionId = `session-${Date.now()}`;
+                const createdAt = new Date().toISOString();
                 setSessionsIndex((prev) => [
                   ...prev,
-                  { id: sessionId, campaignId: activeCampaignId, name: title, status: "planned" }
+                  {
+                    id: sessionId,
+                    campaignId,
+                    name: title,
+                    createdAt,
+                    status: "planned"
+                  }
                 ]);
-                const campName = campaignIndex.find((c) => c.id === activeCampaignId)?.name;
-                ensureSessionState(activeCampaignId, sessionId, title, campName);
-                setActiveSessionId(sessionId);
-                loadSessionIntoState(activeCampaignId, sessionId);
+                const campName = campaignIndex.find((c) => c.id === campaignId)?.name;
+                ensureSessionState(campaignId, sessionId, title, campName);
               }}
-              onBack={() => {
-                setActiveCampaignId(undefined);
-                setActiveSessionId(undefined);
+              onDeleteCampaign={(campaignId) => {
+                setCampaignIndex((prev) => prev.filter((campaign) => campaign.id !== campaignId));
+                setSessionsIndex((prev) =>
+                  prev.filter((session) => session.campaignId !== campaignId)
+                );
+                setCampaigns((prev) => prev.filter((campaign) => campaign.id !== campaignId));
+                setPlayerCharacters((prev) =>
+                  prev.filter((pc) => pc.campaignId !== campaignId)
+                );
+                setNpcs((prev) => prev.filter((npc) => npc.campaignId !== campaignId));
+                if (activeCampaignId === campaignId) {
+                  setActiveCampaignId(undefined);
+                  setActiveSessionId(undefined);
+                  return;
+                }
+                const activeSession = sessionsIndex.find((s) => s.id === activeSessionId);
+                if (activeSession?.campaignId === campaignId) {
+                  setActiveSessionId(undefined);
+                }
               }}
             />
           ) : mode === "LIVE" ? (
             <div className="layout">
               <LeftPanel
-                scenes={mockScenes}
+                scenes={scenes}
                 activeSceneId={activeSceneId}
-                onSelect={handleSceneSelect}
+                onSetActive={handleSetActiveScene}
+                onAddScene={handleAddScene}
+                onUpdateScene={handleUpdateScene}
+                onDeleteScene={handleDeleteScene}
+                onMoveScene={handleMoveScene}
               />
               <CenterPanel
                 mode={mode}
                 notes={notes}
-                logEntries={logEntries}
                 noteTag={noteTag}
                 noteText={noteText}
                 onNoteTagChange={setNoteTag}
                 onNoteTextChange={setNoteText}
                 onAddNote={handleAddNote}
-                onClearLog={handleClearLog}
+                onDeleteNote={handleDeleteNote}
                 activeSceneTitle={
-                  mockScenes.find((s) => s.id === activeSceneId)?.title ?? "—"
+                  scenes.find((s) => s.id === activeSceneId)?.title ?? "—"
                 }
               />
               <RightPanel
-                pcs={playerCharacters}
-                npcs={npcs}
+                pcs={campaignPlayerCharacters}
+                npcs={campaignNpcs}
                 pinnedNpcIds={pinnedNpcIds}
                 onPinNpc={handlePinNpc}
                 onUnpinNpc={handleUnpinNpc}
                 onOpenPCs={handleOpenPCLibrary}
-                onOpenNPCs={handleOpenNPCLibrary}
                 onUpdatePC={(id, patch) => handleUpsertPC({
                   ...(playerCharacters.find((p) => p.id === id) ?? {
                     id,
+                    campaignId: resolvedCampaignId,
                     name: "",
                     className: "",
                     level: 1,
@@ -1273,12 +1597,13 @@ export function App() {
           ) : (
             <div className="layout">
               <CombatView
+                key={`combat-${combatResetCounter}`}
                 combatants={combatants}
                 combatLog={combatLog}
                 activeCombatantId={activeCombatantId}
                 round={combatRound}
-                pcs={playerCharacters}
-                npcs={npcs}
+                pcs={campaignPlayerCharacters}
+                npcs={campaignNpcs}
                 monsters={monsters}
                 onAddPCs={handleAddPCCombatants}
                 onAddNPCs={handleAddNPCCombatants}

@@ -13,6 +13,7 @@ export function NPCForm({ initial, onSubmit, onCancel }: NPCFormProps) {
   const [npc, setNpc] = useState<NPC>(
     initial ?? {
       id: `npc-${Date.now()}`,
+      campaignId: initial?.campaignId ?? "",
       name: "",
       role: "",
       faction: "",

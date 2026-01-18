@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Monster } from "../types/monster";
+import type { MonsterRepository } from "../repositories/MonsterRepository";
 import { MonsterForm } from "./MonsterForm";
 import { MonsterDetail } from "./MonsterDetail";
 
@@ -30,11 +31,17 @@ const defaultMonster = (): Monster => ({
 
 type MonsterListViewProps = {
   monsters: Monster[];
-  onUpsert: (monster: Monster) => void;
+  repository: MonsterRepository;
+  onMonstersChange: (monsters: Monster[]) => void;
   onClose: () => void;
 };
 
-export function MonsterListView({ monsters, onUpsert, onClose }: MonsterListViewProps) {
+export function MonsterListView({
+  monsters,
+  repository,
+  onMonstersChange,
+  onClose
+}: MonsterListViewProps) {
   const [searchText, setSearchText] = useState("");
   const [crFilter, setCrFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -110,8 +117,10 @@ export function MonsterListView({ monsters, onUpsert, onClose }: MonsterListView
     setEditing(false);
   };
 
-  const handleSave = (monster: Monster) => {
-    onUpsert(monster);
+  const handleSave = async (monster: Monster) => {
+    await repository.upsert(monster);
+    const updated = await repository.list();
+    onMonstersChange(updated);
     setSelectedId(monster.id);
     setEditing(false);
   };
@@ -130,7 +139,7 @@ export function MonsterListView({ monsters, onUpsert, onClose }: MonsterListView
         </div>
       </div>
 
-      <div className="filter-row">
+      <div className="filter-row filter-row--monsters">
         <input
           className="input"
           placeholder="Szukaj po nazwie/typie"
